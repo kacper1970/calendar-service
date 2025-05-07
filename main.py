@@ -8,16 +8,17 @@ from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
 from flask_cors import CORS
 
+
+
 app = Flask(__name__)
 CORS(app)
 
-# Token i OAuth
 TOKEN_FILE = "token.pickle"
 SCOPES = ['https://www.googleapis.com/auth/calendar']
+CALENDAR_ID = os.getenv("GOOGLE_CALENDAR_ID")
 CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID")
 CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET")
 REDIRECT_URI = "https://calendar-service-pl5m.onrender.com/oauth2callback"
-CALENDAR_ID = os.environ.get("GOOGLE_CALENDAR_ID")
 
 @app.route("/")
 def index():
@@ -106,20 +107,17 @@ def available_days():
     events = events_result.get('items', [])
 
     busy_days = set(event['start']['dateTime'][:10] for event in events if 'dateTime' in event['start'])
-    available = []
-    for i in range((end - start).days):
-        day = start + datetime.timedelta(days=i)
-        date_str = day.date().isoformat()
-        if date_str not in busy_days:
-            available.append(date_str)
 
-    return jsonify({"available_days": available})
+    all_days = [(start + datetime.timedelta(days=i)).date().isoformat() for i in range((end - start).days + 1)]
+    available_days = [day for day in all_days if day not in busy_days]
+
+    return jsonify({"available_days": available_days})
 
 @app.route("/available-slots")
 def available_slots():
     date_str = request.args.get("date")
     if not date_str:
-        return jsonify({"error": "Brak parametru 'date'"}), 400
+        return jsonify({"error": "Brak daty"}), 400
 
     date = datetime.datetime.strptime(date_str, "%Y-%m-%d")
     start = date.replace(hour=8)
@@ -135,43 +133,70 @@ def available_slots():
     ).execute()
     events = events_result.get('items', [])
 
-    busy_slots = [(datetime.datetime.fromisoformat(e['start']['dateTime']),
-                   datetime.datetime.fromisoformat(e['end']['dateTime'])) for e in events if 'dateTime' in e['start']]
+    busy_slots = [(datetime.datetime.fromisoformat(e['start']['dateTime']), datetime.datetime.fromisoformat(e['end']['dateTime'])) for e in events if 'dateTime' in e['start']]
 
-    slots = []
-    current = start
-    while current + datetime.timedelta(hours=1) <= end:
-        slot_start = current
-        slot_end = current + datetime.timedelta(hours=1)
-        conflict = any(bs < slot_end and be > slot_start for bs, be in busy_slots)
-        if not conflict:
-            slots.append(f"{slot_start.strftime('%H:%M')}-{slot_end.strftime('%H:%M')}")
-        current += datetime.timedelta(minutes=60)
+    free_slots = []
+    slot_start = start
+    while slot_start + datetime.timedelta(hours=1) <= end:
+        slot_end = slot_start + datetime.timedelta(hours=1)
+        if not any(bs <= slot_start < be or bs < slot_end <= be for bs, be in busy_slots):
+            free_slots.append(f"{slot_start.time().strftime('%H:%M')}–{slot_end.time().strftime('%H:%M')}")
+        slot_start += datetime.timedelta(hours=1)
 
-    return jsonify({"available_slots": slots})
+    return jsonify({"free_slots": free_slots})
 
 @app.route("/book", methods=["POST"])
 def book():
-    data = request.json
+    data = request.get_json()
     date = data.get("date")
-    time = data.get("time")
-    summary = data.get("summary", "Wizyta klienta")
+    slot = data.get("slot")
+    name = data.get("name")
+    phone = data.get("phone")
+    address = data.get("address")
+    problem = data.get("problem")
+    urgency = data.get("urgency", "standard")
 
-    if not date or not time:
-        return jsonify({"error": "Brakuje daty lub godziny"}), 400
+    if not all([date, slot, name, phone, address, problem]):
+        return jsonify({"error": "Brakuje danych"}), 400
 
-    start_time = datetime.datetime.strptime(f"{date} {time}", "%Y-%m-%d %H:%M")
-    end_time = start_time + datetime.timedelta(hours=1)
+    emoji_map = {
+        "standard": "🟢",
+        "urgent": "🟠",
+        "now": "🔴"
+    }
+    emoji = emoji_map.get(urgency, "🔵")
+
+    summary = f"{emoji} {name} – {problem}"
+    description = f"""
+📞 Telefon: {phone}
+📍 Adres: {address}
+🛠️ Problem: {problem}
+⏱️ Typ wizyty: {emoji} ({urgency})
+"""
+
+    date_obj = datetime.datetime.strptime(date, "%Y-%m-%d")
+    start_hour, end_hour = slot.split("–")
+    start_time = datetime.datetime.strptime(start_hour, "%H:%M").time()
+    end_time = datetime.datetime.strptime(end_hour, "%H:%M").time()
+    start = datetime.datetime.combine(date_obj, start_time)
+    end = datetime.datetime.combine(date_obj, end_time)
 
     service = get_calendar_service()
     event = {
         'summary': summary,
-        'start': {'dateTime': start_time.isoformat(), 'timeZone': 'Europe/Warsaw'},
-        'end': {'dateTime': end_time.isoformat(), 'timeZone': 'Europe/Warsaw'}
+        'description': description,
+        'start': {
+            'dateTime': start.isoformat(),
+            'timeZone': 'Europe/Warsaw',
+        },
+        'end': {
+            'dateTime': end.isoformat(),
+            'timeZone': 'Europe/Warsaw',
+        },
     }
-
     created_event = service.events().insert(calendarId=CALENDAR_ID, body=event).execute()
-    return jsonify({"status": "zarezerwowano", "event_id": created_event['id']})
+
+    return jsonify({"status": "Zarezerwowano", "event_link": created_event.get("htmlLink")})
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))

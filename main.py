@@ -6,7 +6,6 @@ import google.auth.transport.requests
 from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
 from flask_cors import CORS
-from flask_session import Session
 
 app = Flask(__name__)
 CORS(app)

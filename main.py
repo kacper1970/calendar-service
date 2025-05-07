@@ -87,11 +87,11 @@ def available_days():
         start = today + datetime.timedelta(days=7)
         end = today + datetime.timedelta(days=14)
     elif urgency == "urgent":
-        start = today + datetime.timedelta(days=2)
+        start = today + datetime.timedelta(days=1)
         end = today + datetime.timedelta(days=7)
     elif urgency == "now":
         start = today
-        end = today + datetime.timedelta(days=1)
+        end = today
     else:
         return jsonify({"error": "Nieznany parametr urgency"}), 400
 

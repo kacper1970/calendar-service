@@ -1,4 +1,5 @@
 import os
+os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
 import pickle
 import datetime
 from flask import Flask, request, jsonify, redirect
@@ -6,9 +7,6 @@ from flask_cors import CORS
 from googleapiclient.discovery import build
 from google_auth_oauthlib.flow import Flow
 import google.auth.transport.requests
-
-# Zezwolenie na użycie HTTP (nie HTTPS) dla OAuth2 - TYLKO dla testów!
-os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
 
 # Flask setup
 app = Flask(__name__)

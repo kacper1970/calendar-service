@@ -7,23 +7,18 @@ from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
 from flask_cors import CORS
 
-# 🔐 Pozwala testować OAuth przez HTTP (lokalnie lub w Render)
-os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
-
 app = Flask(__name__)
 CORS(app)
 
-# Konfiguracja ogólna
-app.config['SECRET_KEY'] = os.getenv("FLASK_SECRET_KEY", "dev-secret")
-
-# Plik z tokenem autoryzacyjnym
+# Ścieżka do pliku z tokenem
 TOKEN_FILE = "token.pickle"
 SCOPES = ['https://www.googleapis.com/auth/calendar']
 
-# Dane OAuth z Google Cloud Console
+# Zmienne środowiskowe
 CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID")
 CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET")
 REDIRECT_URI = "https://calendar-service-pl5m.onrender.com/oauth2callback"
+CALENDAR_ID = os.environ.get("GOOGLE_CALENDAR_ID", "primary")
 
 @app.route("/")
 def index():
@@ -91,7 +86,7 @@ def free_slots():
         end = (now + datetime.timedelta(days=14)).isoformat() + 'Z'
 
         events_result = service.events().list(
-            calendarId='primary',
+            calendarId=CALENDAR_ID,
             timeMin=start,
             timeMax=end,
             singleEvents=True,

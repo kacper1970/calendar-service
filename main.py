@@ -1,4 +1,4 @@
-from flask import Flask, redirect, request, jsonify
+from flask import Flask, redirect, request, jsonify, session
 import os
 import pickle
 import datetime
@@ -6,15 +6,21 @@ import google.auth.transport.requests
 from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
 from flask_cors import CORS
+from flask_session import Session
 
 app = Flask(__name__)
 CORS(app)
+
+# Konfiguracja sesji
+app.config['SECRET_KEY'] = os.getenv("FLASK_SECRET_KEY", "dev-secret")
+app.config['SESSION_TYPE'] = 'filesystem'
+Session(app)
 
 # Ścieżka do pliku z tokenem
 TOKEN_FILE = "token.pickle"
 SCOPES = ['https://www.googleapis.com/auth/calendar']
 
-# Zmienna środowiskowa (można też wstawić na sztywno)
+# Dane OAuth z Render Environment Variables
 CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID")
 CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET")
 REDIRECT_URI = "https://calendar-service-pl5m.onrender.com/oauth2callback"
@@ -39,23 +45,12 @@ def authorize():
         redirect_uri=REDIRECT_URI
     )
     auth_url, _ = flow.authorization_url(prompt='consent', access_type='offline', include_granted_scopes='true')
+    session['flow'] = pickle.dumps(flow)
     return redirect(auth_url)
 
 @app.route("/oauth2callback")
 def oauth2callback():
-    flow = Flow.from_client_config(
-        {
-            "web": {
-                "client_id": CLIENT_ID,
-                "client_secret": CLIENT_SECRET,
-                "redirect_uris": [REDIRECT_URI],
-                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-                "token_uri": "https://oauth2.googleapis.com/token"
-            }
-        },
-        scopes=SCOPES,
-        redirect_uri=REDIRECT_URI
-    )
+    flow = pickle.loads(session.pop('flow', None))
     flow.fetch_token(authorization_response=request.url)
     creds = flow.credentials
 

@@ -7,6 +7,9 @@ from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
 from flask_cors import CORS
 
+# 🔐 Pozwala testować OAuth przez HTTP (lokalnie lub w Render)
+os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
+
 app = Flask(__name__)
 CORS(app)
 

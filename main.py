@@ -1,5 +1,6 @@
 from flask import Flask, redirect, request, jsonify
 import os
+os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
 import pickle
 import datetime
 import google.auth.transport.requests

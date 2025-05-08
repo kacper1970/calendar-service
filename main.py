@@ -1,33 +1,28 @@
-from flask import Flask, redirect, request, jsonify
 import os
-os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
-import base64
 import pickle
+import base64
 import datetime
-import google.auth.transport.requests
+from flask import Flask, request, jsonify, redirect
+from flask_cors import CORS
 from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
-from flask_cors import CORS
+import google.auth.transport.requests
 
-# Inicjalizacja aplikacji
+os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
+
 app = Flask(__name__)
 CORS(app)
 
-# Ustawienia środowiskowe
+SCOPES = ['https://www.googleapis.com/auth/calendar']
 CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
 CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
 REDIRECT_URI = "https://calendar-service-pl5m.onrender.com/oauth2callback"
-SCOPES = ['https://www.googleapis.com/auth/calendar']
+CALENDAR_ID = os.getenv("GOOGLE_CALENDAR_ID")
 
-# Pozwolenie na HTTP (dla Render w wersji dev)
-os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
-
-# Główna strona serwisu
 @app.route("/")
 def index():
     return "✅ Calendar service is running"
 
-# Autoryzacja Google OAuth2
 @app.route("/authorize")
 def authorize():
     flow = Flow.from_client_config(
@@ -46,7 +41,6 @@ def authorize():
     auth_url, _ = flow.authorization_url(prompt='consent', access_type='offline', include_granted_scopes='true')
     return redirect(auth_url)
 
-# Callback po autoryzacji – zapis tokena jako base64
 @app.route("/oauth2callback")
 def oauth2callback():
     flow = Flow.from_client_config(
@@ -65,49 +59,142 @@ def oauth2callback():
     flow.fetch_token(authorization_response=request.url)
     creds = flow.credentials
 
-    with open("token.pickle", "wb") as token_file:
-        pickle.dump(creds, token_file)
+    with open("token.pickle", "wb") as token:
+        pickle.dump(creds, token)
 
-    return "✅ Token zapisany. Pobierz go przez /download-token i dodaj do Render jako GOOGLE_TOKEN_B64."
+    return "✅ Token zapisany. Możesz teraz korzystać z kalendarza."
 
-# Funkcja do pobrania połączenia z Google Calendar z ENV
 def get_calendar_service():
-    token_b64 = os.getenv("GOOGLE_TOKEN_B64")
-    if not token_b64:
-        raise Exception("Brak tokena. Przejdź do /authorize i ustaw GOOGLE_TOKEN_B64 w Render")
-
-    token_bytes = base64.b64decode(token_b64.encode("utf-8"))
-    creds = pickle.loads(token_bytes)
+    if os.getenv("GOOGLE_TOKEN_B64"):
+        token_bytes = base64.b64decode(os.getenv("GOOGLE_TOKEN_B64"))
+        creds = pickle.loads(token_bytes)
+    elif os.path.exists("token.pickle"):
+        with open("token.pickle", "rb") as token:
+            creds = pickle.load(token)
+    else:
+        raise Exception("Brak tokena. Przejdź do /authorize")
 
     if creds.expired and creds.refresh_token:
         creds.refresh(google.auth.transport.requests.Request())
-        # UWAGA: nie zapisujemy zaktualizowanego tokena – jeśli chcesz, zaktualizuj GOOGLE_TOKEN_B64 ręcznie
+        with open("token.pickle", "wb") as token:
+            pickle.dump(creds, token)
 
     return build('calendar', 'v3', credentials=creds)
 
-# Endpoint testowy do pobrania wydarzeń między 7. a 14. dniem
-@app.route("/free-slots", methods=["GET"])
-def free_slots():
-    try:
-        service = get_calendar_service()
+@app.route("/available-days")
+def available_days():
+    urgency = request.args.get("urgency", "standard")
+    today = datetime.datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
 
-        now = datetime.datetime.utcnow()
-        start = (now + datetime.timedelta(days=7)).isoformat() + 'Z'
-        end = (now + datetime.timedelta(days=14)).isoformat() + 'Z'
+    if urgency == "standard":
+        start = today + datetime.timedelta(days=7)
+        end = today + datetime.timedelta(days=14)
+    elif urgency == "urgent":
+        start = today + datetime.timedelta(days=1)
+        end = today + datetime.timedelta(days=7)
+    elif urgency == "now":
+        start = today
+        end = today
+    else:
+        return jsonify({"error": "Nieznany parametr urgency"}), 400
 
-        events_result = service.events().list(
-            calendarId='be9b5f1bccf1c810003ce5bc5eb3493716031cf1ea5fdd9a9e52b4e6fe5b05e7@group.calendar.google.com',
-            timeMin=start,
-            timeMax=end,
-            singleEvents=True,
-            orderBy='startTime'
-        ).execute()
-        events = events_result.get('items', [])
+    service = get_calendar_service()
+    events_result = service.events().list(
+        calendarId=CALENDAR_ID,
+        timeMin=start.isoformat() + 'Z',
+        timeMax=end.isoformat() + 'Z',
+        singleEvents=True,
+        orderBy='startTime'
+    ).execute()
+    events = events_result.get('items', [])
 
-        return jsonify({"events": events})
+    booked_days = set()
+    for event in events:
+        date = event['start'].get('dateTime', event['start'].get('date'))[:10]
+        booked_days.add(date)
 
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    all_days = [(start + datetime.timedelta(days=i)).date().isoformat() for i in range((end - start).days + 1)]
+    available_days = [day for day in all_days if day not in booked_days]
+
+    return jsonify({"available_days": available_days})
+
+@app.route("/available-slots")
+def available_slots():
+    date_str = request.args.get("date")
+    if not date_str:
+        return jsonify({"error": "Brak daty"}), 400
+
+    date = datetime.datetime.strptime(date_str, "%Y-%m-%d")
+    start_of_day = date.replace(hour=8, minute=0)
+    end_of_day = date.replace(hour=18, minute=0)
+
+    service = get_calendar_service()
+    events_result = service.events().list(
+        calendarId=CALENDAR_ID,
+        timeMin=start_of_day.isoformat() + 'Z',
+        timeMax=end_of_day.isoformat() + 'Z',
+        singleEvents=True,
+        orderBy='startTime'
+    ).execute()
+    events = events_result.get('items', [])
+
+    occupied = []
+    for event in events:
+        start = event['start']['dateTime']
+        start_hour = datetime.datetime.fromisoformat(start).hour
+        occupied.append(start_hour)
+
+    slots = []
+    for hour in range(8, 18):
+        if hour not in occupied:
+            slot = f"{hour:02d}:00–{hour+1:02d}:00"
+            slots.append(slot)
+
+    return jsonify({"free_slots": slots})
+
+@app.route("/book", methods=["POST"])
+def book():
+    data = request.json
+    date = data.get("date")
+    slot = data.get("slot")
+    name = data.get("name")
+    phone = data.get("phone")
+    address = data.get("address")
+    problem = data.get("problem")
+    urgency = data.get("urgency", "standard")
+
+    if not all([date, slot, name, phone, address, problem]):
+        return jsonify({"error": "Brak wymaganych danych"}), 400
+
+    emojis = {"standard": "🟢", "urgent": "🟠", "now": "🔴"}
+    emoji = emojis.get(urgency, "🟢")
+
+    start_hour, end_hour = slot.split("–")
+    start_datetime = datetime.datetime.strptime(f"{date} {start_hour}", "%Y-%m-%d %H:%M")
+    end_datetime = datetime.datetime.strptime(f"{date} {end_hour}", "%Y-%m-%d %H:%M")
+
+    event = {
+        'summary': f"{emoji} {name} – {problem}",
+        'location': address,
+        'description': f"""
+📞 Telefon: {phone}
+📍 Adres: {address}
+🛠️ Problem: {problem}
+⏱️ Typ wizyty: {emoji} ({urgency})
+""",
+        'start': {
+            'dateTime': start_datetime.isoformat(),
+            'timeZone': 'Europe/Warsaw',
+        },
+        'end': {
+            'dateTime': end_datetime.isoformat(),
+            'timeZone': 'Europe/Warsaw',
+        }
+    }
+
+    service = get_calendar_service()
+    created_event = service.events().insert(calendarId=CALENDAR_ID, body=event).execute()
+    return jsonify({"status": "Zarezerwowano", "event_link": created_event.get("htmlLink")})
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))

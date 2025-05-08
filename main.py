@@ -70,14 +70,6 @@ def oauth2callback():
 
     return "✅ Token zapisany. Pobierz go przez /download-token i dodaj do Render jako GOOGLE_TOKEN_B64."
 
-# Tymczasowy endpoint do pobrania tokena w Base64
-@app.route("/download-token")
-def download_token():
-    with open("token.pickle", "rb") as f:
-        token_bytes = f.read()
-        token_b64 = base64.b64encode(token_bytes).decode("utf-8")
-    return jsonify({"token_b64": token_b64})
-
 # Funkcja do pobrania połączenia z Google Calendar z ENV
 def get_calendar_service():
     token_b64 = os.getenv("GOOGLE_TOKEN_B64")

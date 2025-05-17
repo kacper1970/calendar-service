@@ -91,10 +91,13 @@ def available_days():
         end = today + datetime.timedelta(days=14)
     elif urgency == "urgent":
         start = today + datetime.timedelta(days=1)
-        end = today + datetime.timedelta(days=7)
+        end = today + datetime.timedelta(days=6)
     elif urgency == "now":
         start = today
-        end = today
+        end = today + datetime.timedelta(days=1)
+    elif urgency == "plan":
+        start = today + datetime.timedelta(days=15)
+        end = today + datetime.timedelta(days=30)
     else:
         return jsonify({"error": "Nieznany parametr urgency"}), 400
 
@@ -162,13 +165,19 @@ def book():
     address = data.get("address")
     problem = data.get("problem")
     urgency = data.get("urgency", "standard")
+    override_now = data.get("override_now", False)
 
     if not all([date, slot, name, phone, address, problem]):
         return jsonify({"error": "Brak wymaganych danych"}), 400
 
-    emojis = {"standard": "🟢", "urgent": "🟠", "now": "🔴"}
-    emoji = emojis.get(urgency, "🟢")
+    # Oznaczenie typu wizyty
+    if override_now:
+        emoji = "🔺"
+    else:
+        emojis = {"standard": "🟢", "urgent": "🟠", "now": "🔴", "plan": "🔵"}
+        emoji = emojis.get(urgency, "🟢")
 
+    # Rozbij slot na godziny
     start_hour, end_hour = slot.split("–")
     start_datetime = datetime.datetime.strptime(f"{date} {start_hour}", "%Y-%m-%d %H:%M")
     end_datetime = datetime.datetime.strptime(f"{date} {end_hour}", "%Y-%m-%d %H:%M")
@@ -180,7 +189,7 @@ def book():
 📞 Telefon: {phone}
 📍 Adres: {address}
 🛠️ Problem: {problem}
-⏱️ Typ wizyty: {emoji} ({urgency})
+⏱️ Typ wizyty: {emoji} ({'NATYCHMIASTOWA (override)' if override_now else urgency.upper()})
 """,
         'start': {
             'dateTime': start_datetime.isoformat(),

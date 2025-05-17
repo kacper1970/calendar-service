@@ -1,12 +1,14 @@
+
 import os
 import pickle
 import base64
 import datetime
+from datetime import datetime as dt, timedelta
 from flask import Flask, request, jsonify, redirect
 from flask_cors import CORS
 from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
-import google.auth.transport.requests
+from google.auth.transport.requests import Request
 
 os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
 
@@ -75,7 +77,7 @@ def get_calendar_service():
         raise Exception("Brak tokena. Przejdź do /authorize")
 
     if creds.expired and creds.refresh_token:
-        creds.refresh(google.auth.transport.requests.Request())
+        creds.refresh(Request())
         with open("token.pickle", "wb") as token:
             pickle.dump(creds, token)
 
@@ -170,14 +172,14 @@ def book():
     if not all([date, slot, name, phone, address, problem]):
         return jsonify({"error": "Brak wymaganych danych"}), 400
 
-    # Oznaczenie typu wizyty
+    emoji = "NATYCHMIASTOWA"
     if override_now:
         emoji = "🔺"
     else:
         emojis = {"standard": "🟢", "urgent": "🟠", "now": "🔴", "plan": "🔵"}
         emoji = emojis.get(urgency, "🟢")
 
-    # Rozbij slot na godziny
+
     start_hour, end_hour = slot.split("–")
     start_datetime = datetime.datetime.strptime(f"{date} {start_hour}", "%Y-%m-%d %H:%M")
     end_datetime = datetime.datetime.strptime(f"{date} {end_hour}", "%Y-%m-%d %H:%M")
@@ -204,6 +206,30 @@ def book():
     service = get_calendar_service()
     created_event = service.events().insert(calendarId=CALENDAR_ID, body=event).execute()
     return jsonify({"status": "Zarezerwowano", "event_link": created_event.get("htmlLink")})
+
+@app.route("/events-count")
+def count_events():
+    date_str = request.args.get("date")
+    if not date_str:
+        return jsonify({"error": "Brak daty"}), 400
+
+    try:
+        service = get_calendar_service()
+        start = dt.strptime(date_str, "%Y-%m-%d").replace(hour=8, minute=0).isoformat() + "Z"
+        end = dt.strptime(date_str, "%Y-%m-%d").replace(hour=22, minute=0).isoformat() + "Z"
+
+        events_result = service.events().list(
+            calendarId=CALENDAR_ID,
+            timeMin=start,
+            timeMax=end,
+            singleEvents=True,
+            orderBy="startTime"
+        ).execute()
+        events = events_result.get("items", [])
+        return jsonify({"count": len(events)})
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))

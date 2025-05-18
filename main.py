@@ -165,9 +165,9 @@ def available_slots():
         return jsonify({"error": "Niepoprawna długość wizyty"}), 400
 
     try:
-        # Ramy czasowe (np. 08:00 – 18:00)
+        # Ramy czasowe (np. 08:00 – 22:00)
         work_start = datetime.strptime(date_str + " 08:00", "%Y-%m-%d %H:%M")
-        work_end = datetime.strptime(date_str + " 18:00", "%Y-%m-%d %H:%M")
+        work_end = datetime.strptime(date_str + " 22:00", "%Y-%m-%d %H:%M")
 
         # Pobierz istniejące wydarzenia z Google Calendar
         events = get_events_for_day(date_str)

@@ -123,7 +123,7 @@ def available_days():
 
     return jsonify({"available_days": available_days})
 
-app.route("/available-slots")
+@app.route("/available-slots")
 def available_slots():
     date_str = request.args.get("date")
     duration_str = request.args.get("duration", "60")  # domyślnie 60 minut

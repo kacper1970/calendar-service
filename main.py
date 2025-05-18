@@ -123,6 +123,16 @@ def available_days():
 
     return jsonify({"available_days": available_days})
 
+LOG_FILE = "slots.log"
+
+def log_to_file(message):
+    try:
+        with open(LOG_FILE, "a", encoding="utf-8") as f:
+            timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            f.write(f"[{timestamp}] {message}\n")
+    except Exception as e:
+        print(f"[BŁĄD LOGOWANIA] {e}", flush=True)
+
 @app.route("/available-slots")
 def available_slots():
     date_str = request.args.get("date")
@@ -139,7 +149,8 @@ def available_slots():
         return jsonify({"error": "Błąd parsowania parametru duration"}), 400
 
     try:
-        print(f"[🔍] Żądanie slotów na dzień {date_str} z długością {duration} minut")
+        log_to_file(f"🔍 Żądanie slotów na dzień {date_str} z długością {duration} min")
+
         date = datetime.datetime.strptime(date_str, "%Y-%m-%d")
         start_of_day = date.replace(hour=8, minute=0)
         end_of_day = date.replace(hour=18, minute=0)
@@ -153,7 +164,7 @@ def available_slots():
             orderBy='startTime'
         ).execute()
         events = events_result.get('items', [])
-        print(f"[📅] Liczba wydarzeń pobranych z kalendarza: {len(events)}")
+        log_to_file(f"📅 Liczba wydarzeń w kalendarzu: {len(events)}")
 
         busy_slots = []
         for event in events:
@@ -164,9 +175,8 @@ def available_slots():
             start = datetime.datetime.fromisoformat(start_dt)
             end = datetime.datetime.fromisoformat(end_dt)
             busy_slots.append((start, end))
-            print(f"[⛔] Wydarzenie zajmuje: {start.strftime('%H:%M')} – {end.strftime('%H:%M')}")
+            log_to_file(f"⛔ Zajęte: {start.strftime('%H:%M')}–{end.strftime('%H:%M')}")
 
-        # Tworzenie dostępnych slotów
         free_slots = []
         current = start_of_day
         while current + datetime.timedelta(minutes=duration) <= end_of_day:
@@ -178,21 +188,23 @@ def available_slots():
                 for (busy_start, busy_end) in busy_slots
             )
 
+            label = f"{candidate_start.strftime('%H:%M')}–{candidate_end.strftime('%H:%M')}"
             if not overlaps:
-                label = f"{candidate_start.strftime('%H:%M')}–{candidate_end.strftime('%H:%M')}"
                 free_slots.append(label)
-                print(f"[✅] Dodano dostępny slot: {label}")
+                log_to_file(f"✅ Dostępny slot: {label}")
             else:
-                print(f"[❌] Kolizja: {candidate_start.strftime('%H:%M')}–{candidate_end.strftime('%H:%M')}")
+                log_to_file(f"❌ Niedostępny slot (kolizja): {label}")
 
             current += datetime.timedelta(minutes=15)
 
-        print(f"[✅] Zwrócono {len(free_slots)} wolnych slotów")
+        log_to_file(f"📦 Zwrócono {len(free_slots)} dostępnych slotów")
         return jsonify({"free_slots": free_slots})
 
     except Exception as e:
-        print(f"[💥] Błąd w generowaniu slotów: {str(e)}")
+        log_to_file(f"💥 Błąd generowania slotów: {str(e)}")
         return jsonify({"error": f"Błąd generowania slotów: {str(e)}"}), 500
+
+
 @app.route("/book", methods=["POST"])
 def book():
     data = request.json

@@ -219,12 +219,12 @@ def book():
     problem = data.get("problem")
     urgency = data.get("urgency", "standard")
     override_now = data.get("override_now", False)
-    duration = data.get("duration", 60)  # 🆕 domyślnie 60 minut, jeśli nie podano
+    duration = int(data.get("duration", 60))  # Domyślnie 60 minut
 
     if not all([date, slot, name, phone, address, problem]):
         return jsonify({"error": "Brak wymaganych danych"}), 400
 
-    # 🟢 Dobór emoji na podstawie typu wizyty
+    # Emoji dla typu wizyty
     if override_now:
         emoji = "🔺"
     else:
@@ -236,12 +236,13 @@ def book():
         }
         emoji = emojis.get(urgency.lower(), "🟢")
 
-    # 📅 Rozbij slot na godzinę startową
-    start_hour = slot.split("–")[0]
-    start_datetime = dt.strptime(f"{date} {start_hour}", "%Y-%m-%d %H:%M")
+    # Przetwarzanie czasu rozpoczęcia i zakończenia
+    start_hour = slot.split("–")[0].strip()
+    tz = pytz.timezone("Europe/Warsaw")
+    start_datetime = tz.localize(dt.strptime(f"{date} {start_hour}", "%Y-%m-%d %H:%M"))
     end_datetime = start_datetime + timedelta(minutes=duration)
 
-    # 📆 Tworzenie wydarzenia do Google Calendar
+    # Tworzenie wydarzenia
     event = {
         'summary': f"{emoji} {name} – {problem}",
         'location': address,
@@ -262,9 +263,10 @@ Czas trwania: {duration} min
         }
     }
 
-    # 📤 Wysłanie do kalendarza
+    # Wysłanie do Google Calendar
     service = get_calendar_service()
     created_event = service.events().insert(calendarId=CALENDAR_ID, body=event).execute()
+
     return jsonify({
         "status": "Zarezerwowano",
         "event_link": created_event.get("htmlLink")
@@ -279,9 +281,9 @@ def count_events():
 
     try:
         service = get_calendar_service()
-        start = dt.strptime(date_str, "%Y-%m-%d").replace(hour=8, minute=0).isoformat() + "Z"
-        end = dt.strptime(date_str, "%Y-%m-%d").replace(hour=22, minute=0).isoformat() + "Z"
-
+        tz = pytz.timezone("Europe/Warsaw")
+        start_datetime = tz.localize(dt.strptime(f"{date} {start_hour}", "%Y-%m-%d %H:%M"))
+        end_datetime = start_datetime + timedelta(minutes=duration)
         events_result = service.events().list(
             calendarId=CALENDAR_ID,
             timeMin=start,

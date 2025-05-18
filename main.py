@@ -201,12 +201,12 @@ def book():
     problem = data.get("problem")
     urgency = data.get("urgency", "standard")
     override_now = data.get("override_now", False)
-    duration = data.get("duration", 60)  # ⏱️ domyślnie 60 minut, ale może być podane dynamicznie
+    duration = data.get("duration", 60)  # 🆕 domyślnie 60 minut, jeśli nie podano
 
     if not all([date, slot, name, phone, address, problem]):
         return jsonify({"error": "Brak wymaganych danych"}), 400
 
-    # 🎯 Dobierz ikonę pilności
+    # 🟢 Dobór emoji na podstawie typu wizyty
     if override_now:
         emoji = "🔺"
     else:
@@ -218,20 +218,21 @@ def book():
         }
         emoji = emojis.get(urgency.lower(), "🟢")
 
-    # 🕒 Oblicz daty startu i końca
-    start_hour = slot.split("–")[0].strip()
-    start_datetime = datetime.strptime(f"{date} {start_hour}", "%Y-%m-%d %H:%M")
+    # 📅 Rozbij slot na godzinę startową
+    start_hour = slot.split("–")[0]
+    start_datetime = dt.strptime(f"{date} {start_hour}", "%Y-%m-%d %H:%M")
     end_datetime = start_datetime + timedelta(minutes=duration)
 
-    # 🗓️ Stwórz wydarzenie
+    # 📆 Tworzenie wydarzenia do Google Calendar
     event = {
         'summary': f"{emoji} {name} – {problem}",
         'location': address,
-        'description': f"""📞 Telefon: {phone}
+        'description': f"""
+📞 Telefon: {phone}
 📍 Adres: {address}
 🛠️ Problem: {problem}
-⏱️ Czas trwania: {duration} minut
-🚦 Typ wizyty: {emoji} ({'NATYCHMIASTOWA (override)' if override_now else urgency.upper()})
+⏱️ Typ wizyty: {emoji} ({'NATYCHMIASTOWA (override)' if override_now else urgency.upper()})
+Czas trwania: {duration} min
 """,
         'start': {
             'dateTime': start_datetime.isoformat(),
@@ -243,9 +244,13 @@ def book():
         }
     }
 
+    # 📤 Wysłanie do kalendarza
     service = get_calendar_service()
     created_event = service.events().insert(calendarId=CALENDAR_ID, body=event).execute()
-    return jsonify({"status": "Zarezerwowano", "event_link": created_event.get("htmlLink")})
+    return jsonify({
+        "status": "Zarezerwowano",
+        "event_link": created_event.get("htmlLink")
+    })
         
 
 @app.route("/events-count")

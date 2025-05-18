@@ -135,6 +135,24 @@ def log_to_file(message):
     except Exception as e:
         print(f"[BŁĄD LOGOWANIA] {e}", flush=True)
         
+def get_events_for_day(date_str):
+    """
+    Pobiera wszystkie wydarzenia z danego dnia z Google Calendar.
+    """
+    service = get_calendar_service()
+    start_of_day = dt.strptime(date_str, "%Y-%m-%d").replace(hour=0, minute=0).isoformat() + "+02:00"
+    end_of_day = dt.strptime(date_str, "%Y-%m-%d").replace(hour=23, minute=59).isoformat() + "+02:00"
+
+    events_result = service.events().list(
+        calendarId=CALENDAR_ID,
+        timeMin=start_of_day,
+        timeMax=end_of_day,
+        singleEvents=True,
+        orderBy='startTime'
+    ).execute()
+
+    return events_result.get('items', [])
+
 
 @app.route("/available-slots")
 def available_slots():

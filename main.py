@@ -5,6 +5,7 @@ import base64
 import datetime
 import pytz
 from datetime import datetime as dt, timedelta
+from datetime import datetime, timedelta
 from flask import Flask, request, jsonify, redirect
 from flask_cors import CORS
 from google_auth_oauthlib.flow import Flow
@@ -191,70 +192,60 @@ def parse_event_end(event):
 
 @app.route("/book", methods=["POST"])
 def book():
-    try:
-        data = request.json
-        date = data.get("date")
-        slot = data.get("slot")
-        name = data.get("name")
-        phone = data.get("phone")
-        address = data.get("address")
-        problem = data.get("problem", "").strip()
-        urgency = data.get("urgency", "standard").lower()
-        override_now = data.get("override_now", False)
-        duration = int(data.get("duration", 60))  # ⏱️ domyślnie 60 minut
+    data = request.json
+    date = data.get("date")
+    slot = data.get("slot")
+    name = data.get("name")
+    phone = data.get("phone")
+    address = data.get("address")
+    problem = data.get("problem")
+    urgency = data.get("urgency", "standard")
+    override_now = data.get("override_now", False)
+    duration = data.get("duration", 60)  # ⏱️ domyślnie 60 minut, ale może być podane dynamicznie
 
-        if not all([date, slot, name, phone, address]):
-            return jsonify({"error": "Brak wymaganych danych"}), 400
+    if not all([date, slot, name, phone, address, problem]):
+        return jsonify({"error": "Brak wymaganych danych"}), 400
 
-        # 🎯 Emoji oznaczenia typu wizyty
-        if override_now:
-            emoji = "🔺"
-        else:
-            emojis = {
-                "standard": "🟢", "standardowa": "🟢",
-                "urgent": "🟠", "pilna": "🟠",
-                "now": "🔴", "natychmiastowa": "🔴",
-                "plan": "🔵", "planowa": "🔵"
-            }
-            emoji = emojis.get(urgency, "🟢")
+    # 🎯 Dobierz ikonę pilności
+    if override_now:
+        emoji = "🔺"
+    else:
+        emojis = {
+            "standard": "🟢", "standardowa": "🟢",
+            "urgent": "🟠", "pilna": "🟠",
+            "now": "🔴", "natychmiastowa": "🔴",
+            "plan": "🔵", "planowa": "🔵"
+        }
+        emoji = emojis.get(urgency.lower(), "🟢")
 
-        # 🕓 Czas rozpoczęcia i zakończenia na podstawie duration
-        start_hour = slot.split("–")[0].strip()
-        start_datetime = datetime.datetime.strptime(f"{date} {start_hour}", "%Y-%m-%d %H:%M")
-        end_datetime = start_datetime + datetime.timedelta(minutes=duration)
+    # 🕒 Oblicz daty startu i końca
+    start_hour = slot.split("–")[0].strip()
+    start_datetime = datetime.strptime(f"{date} {start_hour}", "%Y-%m-%d %H:%M")
+    end_datetime = start_datetime + timedelta(minutes=duration)
 
-        # 📝 Opis problemu
-        description = f"""📞 Telefon: {phone}
+    # 🗓️ Stwórz wydarzenie
+    event = {
+        'summary': f"{emoji} {name} – {problem}",
+        'location': address,
+        'description': f"""📞 Telefon: {phone}
 📍 Adres: {address}
 🛠️ Problem: {problem}
-⏱️ Typ wizyty: {emoji} ({'NATYCHMIASTOWA (override)' if override_now else urgency.upper()})
-"""
-
-        # 📆 Tworzenie wydarzenia w Google Calendar
-        event = {
-            'summary': f"{emoji} {name}",
-            'location': address,
-            'description': description,
-            'start': {
-                'dateTime': start_datetime.isoformat(),
-                'timeZone': 'Europe/Warsaw',
-            },
-            'end': {
-                'dateTime': end_datetime.isoformat(),
-                'timeZone': 'Europe/Warsaw',
-            }
+⏱️ Czas trwania: {duration} minut
+🚦 Typ wizyty: {emoji} ({'NATYCHMIASTOWA (override)' if override_now else urgency.upper()})
+""",
+        'start': {
+            'dateTime': start_datetime.isoformat(),
+            'timeZone': 'Europe/Warsaw',
+        },
+        'end': {
+            'dateTime': end_datetime.isoformat(),
+            'timeZone': 'Europe/Warsaw',
         }
+    }
 
-        service = get_calendar_service()
-        created_event = service.events().insert(calendarId=CALENDAR_ID, body=event).execute()
-
-        return jsonify({
-            "status": "Zarezerwowano",
-            "event_link": created_event.get("htmlLink")
-        })
-
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    service = get_calendar_service()
+    created_event = service.events().insert(calendarId=CALENDAR_ID, body=event).execute()
+    return jsonify({"status": "Zarezerwowano", "event_link": created_event.get("htmlLink")})
         
 
 @app.route("/events-count")

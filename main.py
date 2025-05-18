@@ -144,7 +144,7 @@ def available_slots():
 
     try:
         duration = int(duration_str)
-        if duration not in [15, 30, 45, 60, 90, 120]:
+        if duration not in [15, 30, 45, 60, 90, 120, 150, 180, 210, 240, 270, 300]:
             return jsonify({"error": "Nieprawidłowy czas trwania slotu"}), 400
     except ValueError:
         return jsonify({"error": "Błąd parsowania parametru duration"}), 400

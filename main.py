@@ -123,7 +123,7 @@ def available_days():
 
     return jsonify({"available_days": available_days})
 
-@app.route("/available-slots")
+app.route("/available-slots")
 def available_slots():
     date_str = request.args.get("date")
     duration_str = request.args.get("duration", "60")  # domyślnie 60 minut
@@ -185,40 +185,6 @@ def available_slots():
 
     except Exception as e:
         return jsonify({"error": f"Błąd generowania slotów: {str(e)}"}), 500
-
-        # Zajęte sloty jako lista (start, end) w minutach od 00:00
-        busy_slots = []
-        for event in events:
-            start_dt = event['start'].get('dateTime')
-            end_dt = event['end'].get('dateTime')
-            if not start_dt or not end_dt:
-                continue
-            start = datetime.datetime.fromisoformat(start_dt)
-            end = datetime.datetime.fromisoformat(end_dt)
-            busy_slots.append((start, end))
-
-        # Tworzenie dostępnych slotów
-free_slots = []
-current = start_of_day
-while current + datetime.timedelta(minutes=duration) <= end_of_day:
-    candidate_start = current
-    candidate_end = current + datetime.timedelta(minutes=duration)
-
-    overlaps = any(
-        not (candidate_end <= busy_start or candidate_start >= busy_end)
-        for (busy_start, busy_end) in busy_slots
-    )
-
-    if not overlaps:
-        label = f"{candidate_start.strftime('%H:%M')}–{candidate_end.strftime('%H:%M')}"
-        free_slots.append(label)
-
-    current += datetime.timedelta(minutes=15)  # przesuwamy się co 15 minut
-
-return jsonify({"free_slots": free_slots})
-
-    except Exception as e:
-        return jsonify({\"error\": f\"Błąd generowania slotów: {str(e)}\"}), 500
 
 @app.route("/book", methods=["POST"])
 def book():

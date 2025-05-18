@@ -3,6 +3,7 @@ import os
 import pickle
 import base64
 import datetime
+import pytz
 from datetime import datetime as dt, timedelta
 from flask import Flask, request, jsonify, redirect
 from flask_cors import CORS
@@ -152,17 +153,19 @@ def available_slots():
         log_to_file(f"🔍 Żądanie slotów na dzień {date_str} z długością {duration} min")
 
         date = datetime.datetime.strptime(date_str, "%Y-%m-%d")
-        start_of_day = date.replace(hour=8, minute=0)
-        end_of_day = date.replace(hour=18, minute=0)
+        warsaw = pytz.timezone("Europe/Warsaw")
+        start_of_day = warsaw.localize(date.replace(hour=8, minute=0))
+        end_of_day = warsaw.localize(date.replace(hour=18, minute=0))
 
         service = get_calendar_service()
         events_result = service.events().list(
             calendarId=CALENDAR_ID,
-            timeMin = start_of_day.isoformat()
-            timeMax = end_of_day.isoformat()
+            timeMin=start_of_day.isoformat(),
+            timeMax=end_of_day.isoformat(),
             singleEvents=True,
             orderBy='startTime'
         ).execute()
+        
         events = events_result.get('items', [])
         log_to_file(f"📅 Liczba wydarzeń w kalendarzu: {len(events)}")
 

@@ -176,7 +176,12 @@ def book():
     if override_now:
         emoji = "🔺"
     else:
-        emojis = {"standard": "🟢", "urgent": "🟠", "now": "🔴", "plan": "🔵"}
+        emojis = {
+            "standard": "🟢", "standardowa": "🟢",
+            "urgent": "🟠", "pilna": "🟠",
+            "now": "🔴", "natychmiastowa": "🔴",
+            "plan": "🔵", "planowa": "🔵"
+         }
         emoji = emojis.get(urgency, "🟢")
 
 

@@ -158,8 +158,8 @@ def available_slots():
         service = get_calendar_service()
         events_result = service.events().list(
             calendarId=CALENDAR_ID,
-            timeMin=start_of_day.isoformat() + 'Z',
-            timeMax=end_of_day.isoformat() + 'Z',
+            timeMin = start_of_day.isoformat()
+            timeMax = end_of_day.isoformat()
             singleEvents=True,
             orderBy='startTime'
         ).execute()

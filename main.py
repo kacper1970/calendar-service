@@ -133,79 +133,60 @@ def log_to_file(message):
             f.write(f"[{timestamp}] {message}\n")
     except Exception as e:
         print(f"[BŁĄD LOGOWANIA] {e}", flush=True)
+        
 
 @app.route("/available-slots")
 def available_slots():
     date_str = request.args.get("date")
-    duration_str = request.args.get("duration", "60")  # domyślnie 60 minut
-
-    if not date_str:
-        return jsonify({"error": "Brak daty"}), 400
+    duration_str = request.args.get("duration", "60")
 
     try:
-        duration = int(duration_str)
-        if duration not in [15, 30, 45, 60, 90, 120, 150, 180, 210, 240, 270, 300]:
-            return jsonify({"error": "Nieprawidłowy czas trwania slotu"}), 400
+        duration_minutes = int(duration_str)
     except ValueError:
-        return jsonify({"error": "Błąd parsowania parametru duration"}), 400
+        return jsonify({"error": "Niepoprawna długość wizyty"}), 400
 
     try:
-        log_to_file(f"🔍 Żądanie slotów na dzień {date_str} z długością {duration} min")
+        # Ramy czasowe (np. 08:00 – 18:00)
+        work_start = datetime.strptime(date_str + " 08:00", "%Y-%m-%d %H:%M")
+        work_end = datetime.strptime(date_str + " 18:00", "%Y-%m-%d %H:%M")
 
-        date = datetime.datetime.strptime(date_str, "%Y-%m-%d")
-        warsaw = pytz.timezone("Europe/Warsaw")
-        start_of_day = warsaw.localize(date.replace(hour=8, minute=0))
-        end_of_day = warsaw.localize(date.replace(hour=18, minute=0))
+        # Pobierz istniejące wydarzenia z Google Calendar
+        events = get_events_for_day(date_str)
+        busy_times = [(parse_event_start(e), parse_event_end(e)) for e in events]
 
-        service = get_calendar_service()
-        events_result = service.events().list(
-            calendarId=CALENDAR_ID,
-            timeMin=start_of_day.isoformat(),
-            timeMax=end_of_day.isoformat(),
-            singleEvents=True,
-            orderBy='startTime'
-        ).execute()
-        
-        events = events_result.get('items', [])
-        log_to_file(f"📅 Liczba wydarzeń w kalendarzu: {len(events)}")
+        # Generuj sloty co 15 minut i sprawdź, czy się mieszczą
+        slots = []
+        step = timedelta(minutes=15)
+        duration = timedelta(minutes=duration_minutes)
 
-        busy_slots = []
-        for event in events:
-            start_dt = event['start'].get('dateTime')
-            end_dt = event['end'].get('dateTime')
-            if not start_dt or not end_dt:
-                continue
-            start = datetime.datetime.fromisoformat(start_dt)
-            end = datetime.datetime.fromisoformat(end_dt)
-            busy_slots.append((start, end))
-            log_to_file(f"⛔ Zajęte: {start.strftime('%H:%M')}–{end.strftime('%H:%M')}")
+        current = work_start
+        while current + duration <= work_end:
+            proposed_start = current
+            proposed_end = current + duration
 
-        free_slots = []
-        current = start_of_day
-        while current + datetime.timedelta(minutes=duration) <= end_of_day:
-            candidate_start = current
-            candidate_end = current + datetime.timedelta(minutes=duration)
+            # Sprawdź kolizje
+            overlap = False
+            for start, end in busy_times:
+                if proposed_start < end and proposed_end > start:
+                    overlap = True
+                    break
 
-            overlaps = any(
-                not (candidate_end <= busy_start or candidate_start >= busy_end)
-                for (busy_start, busy_end) in busy_slots
-            )
+            if not overlap:
+                slots.append(proposed_start.strftime("%H:%M") + " – " + proposed_end.strftime("%H:%M"))
 
-            label = f"{candidate_start.strftime('%H:%M')}–{candidate_end.strftime('%H:%M')}"
-            if not overlaps:
-                free_slots.append(label)
-                log_to_file(f"✅ Dostępny slot: {label}")
-            else:
-                log_to_file(f"❌ Niedostępny slot (kolizja): {label}")
+            current += step
 
-            current += datetime.timedelta(minutes=15)
-
-        log_to_file(f"📦 Zwrócono {len(free_slots)} dostępnych slotów")
-        return jsonify({"free_slots": free_slots})
+        return jsonify({"free_slots": slots})
 
     except Exception as e:
-        log_to_file(f"💥 Błąd generowania slotów: {str(e)}")
-        return jsonify({"error": f"Błąd generowania slotów: {str(e)}"}), 500
+        return jsonify({"error": str(e)}), 500
+
+# 🛠 Pomocnicze:
+def parse_event_start(event):
+    return datetime.strptime(event['start']['dateTime'], "%Y-%m-%dT%H:%M:%S%z").astimezone().replace(tzinfo=None)
+
+def parse_event_end(event):
+    return datetime.strptime(event['end']['dateTime'], "%Y-%m-%dT%H:%M:%S%z").astimezone().replace(tzinfo=None)
 
 
 @app.route("/book", methods=["POST"])
